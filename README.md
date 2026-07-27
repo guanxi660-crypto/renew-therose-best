@@ -27,9 +27,9 @@
 | :--- | :---: | :--- | :--- |
 | `EMAIL` | ✅ | TheRose Cloud 的登录邮箱 | `user@example.com` |
 | `PASSWORD` | ✅ | TheRose Cloud 的登录密码 | `YourPassword123` |
-| `SERVER_URL` | ✅ | 目标服务器控制台的直达链接 | `https://panel.therose.cloud/server/1ce3ddfb` |
-| `TG_BOT_TOKEN` | ✅ | Telegram 机器人的 Token (通过 @BotFather 获取) | `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ` |
-| `TG_CHAT_ID` | ✅ | 接收通知的 Telegram 账号或群组 ID | `987654321` |
+| `SERVER_URL` | ❎ | 目标服务器控制台的直达链接 | `https://panel.therose.cloud/server/1ce3ddfb` |
+| `TG_BOT_TOKEN` | ❎ | Telegram 机器人的 Token (通过 @BotFather 获取) | `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ` |
+| `TG_CHAT_ID` | ❎ | 接收通知的 Telegram 账号或群组 ID | `987654321` |
 | `NODE_LINK` | ✅ | 代理节点链接 (用于 Sing-box 代理，突破区域限制) | `vless://...` 或 `vmess://...` |
 
 ### 3. 启用 GitHub Actions
