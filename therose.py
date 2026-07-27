@@ -184,9 +184,9 @@ def login(sb, email, password):
     sb.save_screenshot("login_failed.png")
     return False, sb.get_current_url()
 
-# 执行重启服务器操作
-def reboot_server(sb, url):
-    print(f"🔄 准备进入服务器面板进行重启: {url}")
+# 执行启动或重启服务器操作
+def start_or_reboot_server(sb, url):
+    print(f"🔄 准备进入服务器面板进行启动/重启: {url}")
     try:
         sb.open(url)
         sb.wait_for_ready_state_complete()
@@ -212,7 +212,7 @@ def reboot_server(sb, url):
                 try:
                     sb.uc_gui_click_captcha()
                 except Exception:
-                    pass # 如果没有验证码或点击报错，则直接跳过
+                    pass 
                 
                 time.sleep(3) 
                 
@@ -237,57 +237,85 @@ def reboot_server(sb, url):
             time.sleep(6)
 
         # ==========================================
-        # 3. 寻找并点击“重启”按钮
+        # 3. 寻找并点击“启动”或“重启”按钮 [核心修改区]
         # ==========================================
-        reboot_selectors = [
-            'button[data-action="restart"]',
-            'button i.fa-redo',
-            'button i.fa-sync'
-        ]
-        
         btn_clicked = False
+        action_name = ""
         
-        # 方案 A: 通过常规 CSS 选择器点击
-        for sel in reboot_selectors:
+        # 方案 A1: 优先尝试点击【启动 (Start)】按钮 (针对服务器处于离线状态)
+        start_selectors = [
+            'button[data-action="start"]',
+            'button i.fa-play'
+        ]
+        for sel in start_selectors:
             try:
-                if sb.is_element_visible(sel):
-                    print(f"✅ 找到重启按钮，选择器: {sel}")
+                # 必须可见且按钮未被禁用 (is_element_enabled) 才能点
+                if sb.is_element_visible(sel) and sb.is_element_enabled(sel):
+                    print(f"✅ 服务器似乎处于离线状态，找到可用【启动】按钮: {sel}")
                     sb.uc_click(sel)
                     btn_clicked = True
+                    action_name = "启动"
                     break
             except Exception:
                 continue
-                
-        # 方案 B: 降级方案（JS 直接定位右上角的中间按钮）
+
+        # 方案 A2: 如果启动按钮被禁用(说明正开机)，则尝试点击【重启 (Restart)】按钮
         if not btn_clicked:
-            print("⚠️ 未能通过常规选择器找到按钮，正在使用 JavaScript 定位中间的重启按钮...")
+            reboot_selectors = [
+                'button[data-action="restart"]',
+                'button i.fa-redo',
+                'button i.fa-sync'
+            ]
+            for sel in reboot_selectors:
+                try:
+                    if sb.is_element_visible(sel) and sb.is_element_enabled(sel):
+                        print(f"✅ 服务器处于运行状态，找到可用【重启】按钮: {sel}")
+                        sb.uc_click(sel)
+                        btn_clicked = True
+                        action_name = "重启"
+                        break
+                except Exception:
+                    continue
+                
+        # 方案 B: 降级方案（JS 智能定位）
+        if not btn_clicked:
+            print("⚠️ 未能通过常规选择器找到可用按钮，正在使用 JavaScript 智能定位...")
             try:
-                btn_clicked = sb.driver.execute_script("""
+                js_result = sb.driver.execute_script("""
                     const buttons = document.querySelectorAll('div.flex.items-center button, div.items-center button');
                     
-                    // 1. 先尝试通过特征匹配
+                    // 1. 尝试找能点的【启动】按钮
                     for (let btn of buttons) {
-                        if (btn.getAttribute('data-action') === 'restart' || 
-                            btn.innerHTML.includes('fa-redo') || 
-                            btn.innerHTML.includes('fa-sync')) {
+                        if ((btn.getAttribute('data-action') === 'start' || btn.innerHTML.includes('fa-play')) && !btn.disabled) {
                             btn.click();
-                            return true;
+                            return '启动';
                         }
                     }
                     
-                    // 2. 如果特征匹配失败，直接点击三个按钮中的中间那一个 (索引为 1)
-                    if (buttons.length >= 3) {
-                        buttons[1].click(); 
-                        return true;
-                    } else if (buttons.length >= 2) {
-                        // 如果只有两个按钮，通常是 启动 和 重启，重启在最后
-                        buttons[buttons.length - 1].click();
-                        return true;
+                    // 2. 尝试找能点的【重启】按钮
+                    for (let btn of buttons) {
+                        if ((btn.getAttribute('data-action') === 'restart' || 
+                             btn.innerHTML.includes('fa-redo') || 
+                             btn.innerHTML.includes('fa-sync')) && !btn.disabled) {
+                            btn.click();
+                            return '重启';
+                        }
                     }
-                    return false;
+                    
+                    // 3. 特征匹配失败盲点兜底：优先点第一个(通常是启动)，再点第二个(通常是重启)
+                    if (buttons.length >= 3) {
+                        if (!buttons[0].disabled) { buttons[0].click(); return '启动'; }
+                        if (!buttons[1].disabled) { buttons[1].click(); return '重启'; }
+                    } else if (buttons.length >= 2) {
+                        if (!buttons[0].disabled) { buttons[0].click(); return '启动'; }
+                        buttons[buttons.length - 1].click(); return '重启';
+                    }
+                    return null;
                 """)
-                if btn_clicked:
-                    print("✅ 通过 JavaScript 成功点击了中间的重启按钮")
+                if js_result:
+                    btn_clicked = True
+                    action_name = js_result
+                    print(f"✅ 通过 JavaScript 成功点击了【{action_name}】按钮")
             except Exception as ex:
                 print(f"⚠️ JS 降级点击失败: {ex}")
                 
@@ -295,15 +323,15 @@ def reboot_server(sb, url):
         # 4. 验证结果
         # ==========================================
         if btn_clicked:
-            print("⏳ 等待重启命令发送...")
+            print(f"⏳ 等待 {action_name} 命令发送...")
             time.sleep(3)
-            return True, "已成功发送重启指令"
+            return True, f"已成功发送 [{action_name}] 指令"
         else:
-            return False, "页面上未检测到重启按钮"
+            return False, "页面上未检测到可用的启动或重启按钮"
             
     except Exception as e:
-        # 这个 except 捕获最外层 try 的异常，防止语法错误
-        return False, f"重启操作发生异常: {e}"
+        return False, f"维护操作发生异常: {e}"
+
 # 主流程
 def main():
     print("🚀 启动浏览器")
@@ -363,16 +391,16 @@ def main():
                 sb.save_screenshot("renewal_failed.png")
             print(msg_renewal)
 
-        # 重启逻辑 (与续期独立，均会执行)
-        print("🔄 开始检查并执行服务器重启...")
-        reboot_ok, reboot_msg = reboot_server(sb, SERVER_URL)
+        # 启动/重启逻辑 (与续期独立，均会执行)
+        print("🔄 开始检查并执行服务器启动/重启维护...")
+        reboot_ok, reboot_msg = start_or_reboot_server(sb, SERVER_URL)
         
         if reboot_ok:
-            msg_reboot = f"✅ 自动重启成功: {reboot_msg}"
-            sb.save_screenshot("reboot_success.png")
+            msg_reboot = f"✅ 自动状态维护成功: {reboot_msg}"
+            sb.save_screenshot("maintenance_success.png")
         else:
-            msg_reboot = f"⚠️ 重启失败: {reboot_msg}"
-            sb.save_screenshot("reboot_failed.png")
+            msg_reboot = f"⚠️ 状态维护失败: {reboot_msg}"
+            sb.save_screenshot("maintenance_failed.png")
         print(msg_reboot)
         
         # 汇总发送通知
