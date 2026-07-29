@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import os, re, sys, time, requests
 from seleniumbase import SB
 
-# 环境变量 
+# 环境变量
 EMAIL = os.environ.get("EMAIL") or ""            # 邮箱   
 PASSWORD = os.environ.get("PASSWORD") or ""      # 密码
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN") or ""  # tg通知 bot token
@@ -13,7 +14,7 @@ TG_CHAT_ID = os.environ.get("TG_CHAT_ID") or ""      # tg通知 chat_id id
 SERVER_URL = os.environ.get("SERVER_URL") or "https://panel.therose.cloud/server/1ce3ddfb"
 BASE_URL = "https://client.therose.cloud/login"
 
-# logo 图片路径
+# logo 图片路径 (做兜底使用)
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
 
 # --- 代理配置 ---
@@ -97,16 +98,19 @@ def check_renewal_success(sb):
     
     return False, "未检测到续期成功提示"
 
-# 发送tg通知
-def send_tg(token, chat_id, message):
+# 发送tg通知 (增加 image_path 参数)
+def send_tg(token, chat_id, message, image_path=None):
     if not token or not chat_id:
         return
     message = f"【TheRose Cloud】\n{message}"
 
-    if os.path.exists(LOGO_PATH):
+    # 优先使用传入的实时截图，如果没有则使用本地的 LOGO_PATH
+    target_image = image_path if (image_path and os.path.exists(image_path)) else (LOGO_PATH if os.path.exists(LOGO_PATH) else None)
+
+    if target_image:
         url = f"https://api.telegram.org/bot{token}/sendPhoto"
         try:
-            with open(LOGO_PATH, "rb") as f:
+            with open(target_image, "rb") as f:
                 resp = requests.post(
                     url,
                     data={"chat_id": chat_id, "caption": message},
@@ -115,18 +119,18 @@ def send_tg(token, chat_id, message):
                     proxies=REQUESTS_PROXIES,
                 )
             if resp.status_code == 200:
-                print("📨 Telegram 通知已发送（带 logo）")
+                print(f"📨 Telegram 通知已发送（附带图片: {target_image}）")
                 return
             else:
-                print(f"⚠️ 带 logo 发送失败，回退为纯文字: {resp.text}")
+                print(f"⚠️ 带图发送失败，回退为纯文字: {resp.text}")
         except Exception as e:
-            print(f"⚠️ 带 logo 发送异常，回退为纯文字: {e}")
+            print(f"⚠️ 带图发送异常，回退为纯文字: {e}")
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         resp = requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=10, proxies=REQUESTS_PROXIES)
         if resp.status_code == 200:
-            print("📨 Telegram 通知已发送")
+            print("📨 Telegram 通知已发送（纯文字）")
         else:
             print(f"❌ Telegram 发送失败: {resp.text}")
     except Exception as e:
@@ -224,16 +228,13 @@ def start_or_reboot_server(sb, url):
             sb.wait_for_ready_state_complete()
             time.sleep(6)
 
-        # ==========================================
-        # 3. 寻找并点击“启动”或“重启”按钮 (兼容中英文面板)
-        # ==========================================
+        # 3. 寻找并点击“启动”或“重启”按钮
         btn_clicked = False
         action_name = ""
         
-        # 方案 A1: 优先尝试点击【启动 (Start)】按钮
         start_selectors = [
-            'button:contains("启动")',  # 适配中文面板 (即使截图乱码，底层依然可读取)
-            'button:contains("Start")', # 适配英文面板
+            'button:contains("启动")',  
+            'button:contains("Start")', 
             'button[data-action="start"]',
             'button i.fa-play'
         ]
@@ -248,11 +249,10 @@ def start_or_reboot_server(sb, url):
             except Exception:
                 continue
 
-        # 方案 A2: 如果启动按钮未被点击，尝试点击【重启 (Restart)】按钮
         if not btn_clicked:
             reboot_selectors = [
-                'button:contains("重启")',    # 适配中文面板
-                'button:contains("Restart")', # 适配英文面板
+                'button:contains("重启")',    
+                'button:contains("Restart")', 
                 'button[data-action="restart"]',
                 'button i.fa-redo',
                 'button i.fa-sync'
@@ -268,38 +268,30 @@ def start_or_reboot_server(sb, url):
                 except Exception:
                     continue
                 
-        # 方案 B: 降级方案（JS 智能定位，兼容中英文）
         if not btn_clicked:
             print("⚠️ 未能通过常规选择器找到可用按钮，正在使用 JavaScript 智能定位...")
             try:
                 js_result = sb.driver.execute_script("""
                     const buttons = document.querySelectorAll('button');
                     
-                    // 1. 尝试找能点的【启动】按钮 (包含中文"启动"或英文"Start")
                     for (let btn of buttons) {
                         let text = btn.innerText || "";
                         let html = btn.innerHTML || "";
                         let action = btn.getAttribute('data-action') || "";
-                        
                         if ((action === 'start' || html.includes('fa-play') || text.includes('Start') || text.includes('启动')) && !btn.disabled) {
-                            btn.click();
-                            return '启动';
+                            btn.click(); return '启动';
                         }
                     }
                     
-                    // 2. 尝试找能点的【重启】按钮 (包含中文"重启"或英文"Restart")
                     for (let btn of buttons) {
                         let text = btn.innerText || "";
                         let html = btn.innerHTML || "";
                         let action = btn.getAttribute('data-action') || "";
-                        
                         if ((action === 'restart' || html.includes('fa-redo') || html.includes('fa-sync') || text.includes('Restart') || text.includes('重启')) && !btn.disabled) {
-                            btn.click();
-                            return '重启';
+                            btn.click(); return '重启';
                         }
                     }
                     
-                    // 3. 盲点兜底：如果在右上角能找到3个排在一起的按钮，按顺序点
                     const allBtnGroups = document.querySelectorAll('div.flex.items-center, div.gap-2');
                     for (let group of allBtnGroups) {
                         const groupBtns = group.querySelectorAll('button');
@@ -318,7 +310,6 @@ def start_or_reboot_server(sb, url):
             except Exception as ex:
                 print(f"⚠️ JS 降级点击失败: {ex}")
                 
-        # 4. 验证结果
         if btn_clicked:
             print(f"⏳ 等待 {action_name} 命令发送...")
             time.sleep(3)
@@ -351,7 +342,8 @@ def main():
         if not success:
             msg = f"❌ 登录失败，请检查账号密码或验证码拦截情况。"
             print(msg)
-            send_tg(TG_BOT_TOKEN, TG_CHAT_ID, msg)
+            # 发送失败并附带截图
+            send_tg(TG_BOT_TOKEN, TG_CHAT_ID, msg, image_path="login_failed.png")
             return
 
         print("📄 开始续期流程...")
@@ -392,14 +384,16 @@ def main():
         
         if reboot_ok:
             msg_reboot = f"✅ 自动状态维护成功: {reboot_msg}"
-            sb.save_screenshot("maintenance_success.png")
         else:
             msg_reboot = f"⚠️ 状态维护失败: {reboot_msg}"
-            sb.save_screenshot("maintenance_failed.png")
         print(msg_reboot)
         
-        final_msg = f"{msg_renewal}\n---\n{msg_reboot}"
-        send_tg(TG_BOT_TOKEN, TG_CHAT_ID, final_msg)
+        # 截图保存最终状态，并推送到 Telegram
+        final_image = "final_result.png"
+        sb.save_screenshot(final_image)
+        
+        final_msg = f"IP: {current_ip}\n\n{msg_renewal}\n---\n{msg_reboot}"
+        send_tg(TG_BOT_TOKEN, TG_CHAT_ID, final_msg, image_path=final_image)
 
     print("🏁 脚本执行完毕")
 
