@@ -105,7 +105,7 @@ def send_tg(token, chat_id, message, image_path=None):
     message = f"【TheRose Cloud】\n{message}"
 
     # 优先使用传入的实时截图，如果没有则使用本地的 LOGO_PATH
-    target_image = image_path if (image_path and os.path.exists(image_path)) else (LOGO_PATH if os.path.exists(LOGO_PATH) else None)
+   # target_image = image_path if (image_path and os.path.exists(image_path)) else (LOGO_PATH if os.path.exists(LOGO_PATH) else None)
 
     if target_image:
         url = f"https://api.telegram.org/bot{token}/sendPhoto"
@@ -157,14 +157,14 @@ def login(sb, email, password):
     print("⏳ 等待验证 token 生效...")
     sb.sleep(2)
 
-    for attempt in range(3):
+    for attempt in range(5):
         print(f"🔑 点击登录按钮...(第 {attempt + 1} 次)")
         try:
             sb.uc_click('button:contains("Sign in")')
         except Exception as e:
             print(f"⚠️ 点击异常: {e}")
 
-        for _ in range(5):
+        for _ in range(10):
             current_url = sb.get_current_url()
             if "panel" in current_url:
                 print("✅ 登录成功，已跳转到 Dashboard")
